@@ -16,6 +16,7 @@ using Microsoft.SharePoint.Client.Taxonomy;
 using System.Text.RegularExpressions;
 using OfficeDevPnP.Core.Utilities;
 using System.Threading.Tasks;
+using OfficeDevPnP.Core.Entities;
 
 namespace OfficeDevPnP.Core.Framework.Provisioning.ObjectHandlers
 {
@@ -301,9 +302,21 @@ namespace OfficeDevPnP.Core.Framework.Provisioning.ObjectHandlers
                         {
                             foreach (var fieldDefault in listInfo.TemplateList.FieldDefaults)
                             {
+                                var fieldDefaultValue = parser.ParseString(fieldDefault.Value);
+
                                 var field = listInfo.SiteList.Fields.GetByInternalNameOrTitle(fieldDefault.Key);
-                                field.DefaultValue = fieldDefault.Value;
+                                field.DefaultValue = fieldDefaultValue;
                                 field.Update();
+                                web.Context.ExecuteQueryRetry();
+
+                                var defaultColumnTextValue = new DefaultColumnTextValue()
+                                {
+                                    FieldInternalName = fieldDefault.Key,
+                                    FolderRelativePath = "/",
+                                    Text = fieldDefaultValue,
+                                };
+
+                                listInfo.SiteList.SetDefaultColumnValues(new[] { defaultColumnTextValue });
                                 web.Context.ExecuteQueryRetry();
                             }
                         }
