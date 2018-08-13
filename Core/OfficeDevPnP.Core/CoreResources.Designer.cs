@@ -341,6 +341,15 @@ namespace OfficeDevPnP.Core {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Content Type with ID {0} does not exist in the list {1}.
+        /// </summary>
+        internal static string FieldAndContentTypeExtensions_ContentTypeMissing {
+            get {
+                return ResourceManager.GetString("FieldAndContentTypeExtensions_ContentTypeMissing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Creating content type &apos;{0}&apos; ({1})..
         /// </summary>
         internal static string FieldAndContentTypeExtensions_CreateContentType01 {
@@ -1690,6 +1699,15 @@ namespace OfficeDevPnP.Core {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Error during webhook add/update: {0}..
+        /// </summary>
+        internal static string Provisioning_ObjectHandlers_ListInstances_Webhook_Error {
+            get {
+                return ResourceManager.GetString("Provisioning_ObjectHandlers_ListInstances_Webhook_Error", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Data Rows.
         /// </summary>
         internal static string Provisioning_ObjectHandlers_ListInstancesDataRows {
@@ -2562,6 +2580,15 @@ namespace OfficeDevPnP.Core {
         internal static string TimerJob_DoWork_Done {
             get {
                 return ResourceManager.GetString("TimerJob_DoWork_Done", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Failed to obtain a ClientContext instance: {0}..
+        /// </summary>
+        internal static string TimerJob_DoWork_NoClientContext {
+            get {
+                return ResourceManager.GetString("TimerJob_DoWork_NoClientContext", resourceCulture);
             }
         }
         

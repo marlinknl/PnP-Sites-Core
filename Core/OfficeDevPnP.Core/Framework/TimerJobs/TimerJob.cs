@@ -5,7 +5,9 @@ using System.Net;
 using System.Reflection;
 using System.Security;
 using System.Threading;
+#if !NETSTANDARD2_0
 using System.Web.Script.Serialization;
+#endif
 using Microsoft.Online.SharePoint.TenantAdministration;
 using Microsoft.SharePoint.Client;
 using OfficeDevPnP.Core.Framework.TimerJobs.Enums;
@@ -13,17 +15,20 @@ using OfficeDevPnP.Core.Framework.TimerJobs.Utilities;
 using OfficeDevPnP.Core.Diagnostics;
 using System.Security.Cryptography.X509Certificates;
 using System.Globalization;
+#if NETSTANDARD2_0
+using Newtonsoft.Json;
+#endif
 
 namespace OfficeDevPnP.Core.Framework.TimerJobs
 {
-    #region Delegates
+#region Delegates
     /// <summary>
     /// TimerJobRun delegate
     /// </summary>
     /// <param name="sender">calling object instance</param>
     /// <param name="e">TimerJobRunEventArgs event arguments instance</param>
     public delegate void TimerJobRunHandler(object sender, TimerJobRunEventArgs e);
-    #endregion
+#endregion
 
     /// <summary>
     /// Abstract base class for creating timer jobs (background processes) that operate against SharePoint sites. These timer jobs 
@@ -31,7 +36,7 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
     /// </summary>
     public abstract class TimerJob
     {
-        #region Private Variables
+#region Private Variables
         // Timerjob information
         private string name;
         private string version;
@@ -69,16 +74,16 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
         private ManualResetEvent doneEvent;
         private bool useThreading = true;
         private int maximumThreads = 5;
-        #endregion
+#endregion
 
-        #region Events
+#region Events
         /// <summary>
         /// TimerJobRun event
         /// </summary>
         public event TimerJobRunHandler TimerJobRun;
-        #endregion
+#endregion
 
-        #region Constructor
+#region Constructor
         /// <summary>
         /// Simpliefied constructor for timer job, version is always set to "1.0"
         /// </summary>
@@ -118,9 +123,9 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
 
             Log.Info(Constants.LOGGING_SOURCE, CoreResources.TimerJob_Constructor, this.name, this.version);
         }
-        #endregion
+#endregion
 
-        #region Job information & state management
+#region Job information & state management
         /// <summary>
         /// Gets the name of this timer job
         /// </summary>
@@ -231,9 +236,9 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 Log.Info(Constants.LOGGING_SOURCE, CoreResources.TimerJob_MaxThreadSet, this.maximumThreads);
             }
         }
-        #endregion
+#endregion
 
-        #region Run job
+#region Run job
         /// <summary>   
         /// Triggers the timer job to start running
         /// </summary>
@@ -251,10 +256,12 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 this.requestedSites = UpdateAddedSites(requestedSites);
                 Log.Info(Constants.LOGGING_SOURCE, CoreResources.TimerJob_Run_AfterUpdateAddedSites, requestedSites.Count);
 
+#if !NETSTANDARD2_0
                 if (String.IsNullOrEmpty(this.realm) && this.authenticationType == AuthenticationType.AppOnly && requestedSites.Count > 0)
                 {
                     this.realm = Core.Utilities.TokenHelper.GetRealmFromTargetUrl(new Uri(GetTopLevelSite(requestedSites[0].Replace("*", ""))));
                 }
+#endif
 
                 // Prepare the list of sites to process. This will resolve the wildcard site Url's to a list of actual Url's
                 Log.Info(Constants.LOGGING_SOURCE, CoreResources.TimerJob_Run_BeforeResolveAddedSites, requestedSites.Count);
@@ -325,7 +332,10 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 // Call our work routine per site in the passed batch of sites
                 foreach (string site in sites)
                 {
-                    DoWork(site);
+                    if (!string.IsNullOrEmpty(site))
+                    {
+                        DoWork(site);
+                    }
                 }
             }
             finally
@@ -350,35 +360,47 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
             // Get the root site of the passed site
             string rootSite = GetRootSite(site);
 
-            // Instantiate the needed ClientContext objects
-            ClientContext ccWeb = CreateClientContext(site);
-            ClientContext ccSite;
+            ClientContext ccWeb = null;
+            ClientContext ccSite = null;
+            ClientContext ccTenant = null;
 
-            if (rootSite.Equals(site, StringComparison.InvariantCultureIgnoreCase))
+            // Instantiate the needed ClientContext objects
+            try
             {
-                ccSite = ccWeb;
-            }
-            else
-            {
-                ccSite = CreateClientContext(rootSite);
-            }
+                ccWeb = CreateClientContext(site);
+
+
+                if (rootSite.Equals(site, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    ccSite = ccWeb;
+                }
+                else
+                {
+                    ccSite = CreateClientContext(rootSite);
+                }
 
 #if !ONPREMISES
-            // Instantiate ClientContext against tenant admin site, this is needed to operate using the Tenant API
-            string tenantAdminSiteUrl = tenantAdminSite;
-            if (string.IsNullOrEmpty(tenantAdminSiteUrl))
-            {
-                tenantAdminSiteUrl = GetTenantAdminSite(site);
-            }
-            ClientContext ccTenant = CreateClientContext(tenantAdminSiteUrl);
+                // Instantiate ClientContext against tenant admin site, this is needed to operate using the Tenant API
+                string tenantAdminSiteUrl = tenantAdminSite;
+                if (string.IsNullOrEmpty(tenantAdminSiteUrl))
+                {
+                    tenantAdminSiteUrl = GetTenantAdminSite(site);
+                }
+                ccTenant = CreateClientContext(tenantAdminSiteUrl);
 #else
-            // No easy way to detect tenant admin site in on-premises, so uses has to specify it
-            ClientContext ccTenant = null;
-            if (!String.IsNullOrEmpty(tenantAdminSite))
-            {
-                ccTenant = CreateClientContext(tenantAdminSite);
-            }
+                // No easy way to detect tenant admin site in on-premises, so uses has to specify it            
+                if (!String.IsNullOrEmpty(tenantAdminSite))
+                {
+                    ccTenant = CreateClientContext(tenantAdminSite);
+                }
 #endif
+            }
+            catch(Exception ex)
+            {
+                // Sometimes getting a valid clientcontext fails due to auth reasons (e.g. Azure ACS random outages)...don't break the provisioning job 
+                // but provide null values in the timer job event so that each implementation can decide how to handle this
+                Log.Error(Constants.LOGGING_SOURCE, CoreResources.TimerJob_DoWork_NoClientContext, ex.ToDetailedString());
+            }
 
             // Prepare the timerjob callback event arguments
             TimerJobRunEventArgs e = new TimerJobRunEventArgs(site, ccSite, ccWeb, ccTenant, null, null, "", new Dictionary<string, string>(), this.ConfigurationData);
@@ -409,7 +431,9 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 if (timerJobRunHandlerThreadCopy != null)
                 {
                     PropertyValues props = null;
+#if !NETSTANDARD2_0
                     JavaScriptSerializer s = null;
+#endif
 
                     // if state is managed then the state value is stored in a property named "<timerjobname>_Properties"
                     string propertyKey = $"{NormalizedTimerJobName(this.name)}_Properties";
@@ -421,8 +445,9 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                         e.WebClientContext.Load(props);
                         e.WebClientContext.ExecuteQueryRetry();
 
+#if !NETSTANDARD2_0
                         s = new JavaScriptSerializer();
-
+#endif
                         // we've found previously stored state, so this is not the first timer job run
                         if (props.FieldValues.ContainsKey(propertyKey))
                         {
@@ -434,7 +459,11 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                                 Log.Info(Constants.LOGGING_SOURCE, CoreResources.TimerJob_OnTimerJobRun_PropertiesRead, propertyKey, e.Url);
 
                                 // Deserialize the json string into a TimerJobRun class instance
+#if !NETSTANDARD2_0
                                 TimerJobRun timerJobRunProperties = s.Deserialize<TimerJobRun>(timerJobProps);
+#else
+                                TimerJobRun timerJobRunProperties = JsonConvert.DeserializeObject<TimerJobRun>(timerJobProps);
+#endif
 
                                 // Pass the state information as part of the event arguments
                                 if (timerJobRunProperties != null)
@@ -474,8 +503,11 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                         Log.Info(Constants.LOGGING_SOURCE, CoreResources.TimerJob_OnTimerJobRun_PrevRunVersionSet, timerJobRunProperties.PreviousRunVersion, e.Url);
 
                         // Serialize to json string
+#if !NETSTANDARD2_0
                         string timerJobProps = s.Serialize(timerJobRunProperties);
-
+#else
+                        string timerJobProps = JsonConvert.SerializeObject(timerJobRunProperties);
+#endif
                         props = e.WebClientContext.Web.AllProperties;
 
                         // Get the value, if the web properties are already loaded
@@ -552,9 +584,9 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
 
             return batches;
         }
-        #endregion
+#endregion
 
-        #region Authentication methods and attributes
+#region Authentication methods and attributes
 
         /// <summary>
         /// Gets the authentication type that the timer job will use. This will be set as part 
@@ -944,9 +976,9 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 return am;
             }
         }
-        #endregion
+#endregion
 
-        #region Site scope methods and attributes
+#region Site scope methods and attributes
 
         /// <summary>
         /// Does the timerjob also need to enumerate OD4B site collections
@@ -1408,7 +1440,22 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
         /// </summary>
         /// <param name="site">Site Url to create a ClientContext for</param>
         /// <returns>The created ClientContext object. Returns null if no ClientContext was created</returns>
+#if NETSTANDARD2_0
         protected ClientContext CreateClientContext(string site)
+        {
+            if (AuthenticationType == AuthenticationType.Office365)
+            {
+                return GetAuthenticationManager(site).GetSharePointOnlineAuthenticatedContextTenant(site, username, password);
+            } else if(AuthenticationType == AuthenticationType.NetworkCredentials)
+            {
+                return GetAuthenticationManager(site).GetNetworkCredentialAuthenticatedContext(site, username, password, domain);
+            } else
+            {
+                return null;
+            }
+        }
+#else
+            protected ClientContext CreateClientContext(string site)
         {
             if (SharePointVersion == 15)
             {
@@ -1457,6 +1504,7 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
 
             return null;
         }
+#endif
 
         /// <summary>
         /// Resolves a wildcard site Url into a list of actual site Url's
@@ -1476,6 +1524,7 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 ClientContext ccEnumerate;
                 //Good, we can use search for user profile and tenant API enumeration for regular sites
 #if !ONPREMISES
+#if !NETSTANDARD2_0
                 if (AuthenticationType == AuthenticationType.AppOnly)
                 {
                     // with the proper tenant scoped permissions one can do search with app-only in SPO
@@ -1494,8 +1543,11 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 }
                 else
                 {
+#endif
                     ccEnumerate = GetAuthenticationManager(site).GetSharePointOnlineAuthenticatedContextTenant(GetTenantAdminSite(site), EnumerationUser, EnumerationPassword);
-                }
+#if !NETSTANDARD2_0
+            }
+#endif
                 Tenant tenant = new Tenant(ccEnumerate);
                 SiteEnumeration.Instance.ResolveSite(tenant, site, resolvedSites, this.excludeOD4B);
 #else
@@ -1536,9 +1588,9 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 yield return currentUrl;
             }
         }
-        #endregion
+#endregion
 
-        #region Helper methods
+#region Helper methods
         /// <summary>
         /// Verifies if the passed Url has a valid structure
         /// </summary>
@@ -1720,6 +1772,6 @@ namespace OfficeDevPnP.Core.Framework.TimerJobs
                 return false;
             }
         }
-        #endregion
+#endregion
     }
 }
